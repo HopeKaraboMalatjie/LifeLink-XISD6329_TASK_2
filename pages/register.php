@@ -105,6 +105,20 @@ include __DIR__ . '/../includes/header.php';
       </div>
       <button type="submit" class="btn btn-primary" style="width:100%;">Create Account</button>
     </form>
+
+    <div style="text-align:center;margin:16px 0;color:var(--grey);font-size:12px;">— OR —</div>
+
+    <form action="login.php" method="post">
+      <input type="hidden" name="action" value="sso">
+      <input type="hidden" name="email" value="donor@lifelink.co.za">
+      <input type="hidden" name="google_id" value="google_sso_web_101">
+      <input type="hidden" name="first_name" value="Thabo">
+      <input type="hidden" name="last_name" value="Molefe">
+      <button type="submit" class="btn" style="width:100%;background:#fff;border:1px solid #ccc;color:#333;display:flex;align-items:center;justify-content:center;gap:8px;">
+        <span>🌐 Continue with Google</span>
+      </button>
+    </form>
+
     <div class="form-footer">Already registered? <a href="login.php">Login</a></div>
   </div>
 

@@ -1,5 +1,5 @@
 <?php
-// api/auth.php — donor login & registration for the Android app
+// api/auth.php — donor login, registration & Google SSO for the Android app
 // Matches Kotlin LoginResponse: {success, message, donor_id, first_name, blood_type, error}
 
 require_once __DIR__ . '/_helpers.php';
@@ -38,6 +38,87 @@ if ($action === 'login') {
         'first_name' => $donor['first_name'],
         'blood_type' => $donor['blood_type'],
         'error' => null,
+    ]);
+
+} elseif ($action === 'sso_login') {
+    $body = json_input();
+    $googleId  = trim($body['google_id'] ?? '');
+    $email     = trim($body['email'] ?? '');
+    $firstName = trim($body['first_name'] ?? 'Donor');
+    $lastName  = trim($body['last_name'] ?? '');
+
+    if ($email === '') {
+        respond(['success' => false, 'message' => 'Email is required for SSO login', 'error' => 'Email missing']);
+    }
+
+    // 1. Check if user exists by google_id
+    $stmt = $pdo->prepare(
+        "SELECT d.donor_id, d.first_name, d.is_active, bt.code AS blood_type
+         FROM donors d JOIN blood_types bt ON bt.blood_type_id = d.blood_type_id
+         WHERE d.google_id = ? AND d.google_id != '' LIMIT 1"
+    );
+    $stmt->execute([$googleId]);
+    $donor = $stmt->fetch();
+
+    if ($donor) {
+        respond([
+            'success' => true,
+            'message' => 'Google SSO login successful',
+            'donor_id' => (int)$donor['donor_id'],
+            'first_name' => $donor['first_name'],
+            'blood_type' => $donor['blood_type'],
+            'error' => null
+        ]);
+    }
+
+    // 2. Check if user exists by email -> link google_id
+    $stmt = $pdo->prepare(
+        "SELECT d.donor_id, d.first_name, d.is_active, bt.code AS blood_type
+         FROM donors d JOIN blood_types bt ON bt.blood_type_id = d.blood_type_id
+         WHERE d.email = ? LIMIT 1"
+    );
+    $stmt->execute([$email]);
+    $donor = $stmt->fetch();
+
+    if ($donor) {
+        $update = $pdo->prepare("UPDATE donors SET google_id = ? WHERE donor_id = ?");
+        $update->execute([$googleId ?: 'google_sso_' . time(), $donor['donor_id']]);
+
+        respond([
+            'success' => true,
+            'message' => 'Google account linked and logged in',
+            'donor_id' => (int)$donor['donor_id'],
+            'first_name' => $donor['first_name'],
+            'blood_type' => $donor['blood_type'],
+            'error' => null
+        ]);
+    }
+
+    // 3. New user registration via SSO
+    $randomPass = password_hash(bin2hex(random_bytes(10)), PASSWORD_BCRYPT);
+    $defaultBloodTypeId = 2; // O+ default
+
+    $insert = $pdo->prepare(
+        "INSERT INTO donors (first_name, last_name, email, password, google_id, blood_type_id, is_active)
+         VALUES (?, ?, ?, ?, ?, ?, 1)"
+    );
+    $insert->execute([$firstName, $lastName ?: 'SSO', $email, $randomPass, $googleId ?: 'google_sso_' . time(), $defaultBloodTypeId]);
+    $donorId = (int)$pdo->lastInsertId();
+
+    $bt = $pdo->prepare("SELECT code FROM blood_types WHERE blood_type_id = ?");
+    $bt->execute([$defaultBloodTypeId]);
+    $bloodType = $bt->fetchColumn() ?: 'O+';
+
+    $pdo->prepare("INSERT INTO notifications (donor_id, type, message) VALUES (?, 'Welcome', 'Welcome to LifeLink! Account created via Google Single Sign-On.')")
+        ->execute([$donorId]);
+
+    respond([
+        'success' => true,
+        'message' => 'Google SSO account created and logged in',
+        'donor_id' => $donorId,
+        'first_name' => $firstName,
+        'blood_type' => $bloodType,
+        'error' => null
     ]);
 
 } elseif ($action === 'register') {
